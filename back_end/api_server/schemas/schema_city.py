@@ -40,3 +40,14 @@ class LiveRoadTrafficAvg(Base):
     road_traffic_spd = Column(Integer)
     road_traffic_time = Column(DateTime, primary_key=True)
     ingest_timestamp = Column(Float)
+
+# (4) city_cultural_event_proc 테이블 매핑
+class CulturalEventProc(Base):
+    __tablename__ = "city_cultural_event_proc"
+
+    area_nm = Column(String, primary_key=True)
+    event_nm = Column(Text, primary_key=True)
+    event_period = Column(String)
+    event_place = Column(Text)
+    url = Column(Text)
+    ingest_timestamp = Column(DateTime, primary_key=True)

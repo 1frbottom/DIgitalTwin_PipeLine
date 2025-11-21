@@ -526,9 +526,73 @@ query_bus_ppltn = bus_ppltn_raw_df.writeStream \
     .foreachBatch(write_transit_ppltn_to_postgres) \
     .start()
 
+# --- 2-6. city_data (city_data_raw)의 event_stts 스트림 (문화행사 현황) --------
 
+    # EVENT_STTS 배열 내부의 개별 행사 정보 스키마
+schema_event_item = StructType([
+    StructField("EVENT_NM", StringType(), True),
+    StructField("EVENT_PERIOD", StringType(), True),
+    StructField("EVENT_PLACE", StringType(), True),
+    StructField("URL", StringType(), True)
+])
 
+    # 최상위 CULTURALEVENTINFO 스키마
+schema_event_stts_outer = StructType([
+    StructField("EVENT_STTS", ArrayType(schema_event_item), True)
+])
 
+    # city_data_raw 스트림에서 event_stts 필드를 가져와 파싱
+parsed_event_df = parsed_stream_df_city_data \
+    .filter(col("event_stts").isNotNull()) \
+    .select(
+        col("area_nm"),
+        col("timestamp").alias("ingest_timestamp"),
+        from_json(col("event_stts"), schema_event_stts_outer).alias("event_data_outer")
+    ) \
+    .filter(col("event_data_outer.EVENT_STTS").isNotNull()) \
+    .select(
+        "area_nm",
+        "ingest_timestamp",
+        explode(col("event_data_outer.EVENT_STTS")).alias("event")
+    ) \
+    .select(
+        "area_nm",
+        col("event.EVENT_NM").alias("event_nm"),
+        col("event.EVENT_PERIOD").alias("event_period"),
+        col("event.EVENT_PLACE").alias("event_place"),
+        col("event.URL").alias("url"),
+        date_trunc("second", to_timestamp(col("ingest_timestamp")) + expr("INTERVAL 9 HOURS")).alias("ingest_timestamp")
+    )
+
+    # 유효한 데이터만 필터링
+cultural_event_df = parsed_event_df \
+    .filter(col("event_nm").isNotNull())
+
+    # 데이터베이스 쓰기 함수
+def write_cultural_event_to_postgres(df, epoch_id):
+    if df.rdd.isEmpty():
+        return
+
+    from pyspark.sql.window import Window
+    from pyspark.sql.functions import row_number
+
+    window_spec = Window.partitionBy("area_nm", "event_nm").orderBy(col("ingest_timestamp").desc())
+    dedup_df = df.withColumn("row_num", row_number().over(window_spec)) \
+                 .filter(col("row_num") == 1) \
+                 .drop("row_num")
+
+    dedup_df.write \
+      .format("jdbc") \
+      .options(**db_properties) \
+      .option("dbtable", "city_cultural_event_proc") \
+      .mode("append") \
+      .save()
+
+    # 스트림 시작
+query_cultural_event = cultural_event_df.writeStream \
+    .outputMode("append") \
+    .foreachBatch(write_cultural_event_to_postgres) \
+    .start()
 
 # ----------------------------------------------------
 spark.streams.awaitAnyTermination()

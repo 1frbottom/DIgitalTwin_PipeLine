@@ -37,6 +37,16 @@ class LiveRoadTrafficAvgBase(BaseModel):
     road_traffic_idx: Optional[str] = None
     road_traffic_spd: Optional[int] = None
     road_traffic_time: datetime
-    
+
+    class Config:
+        orm_mode = True
+
+# (4) 문화행사 모델
+class CulturalEventBase(BaseModel):
+    event_nm: str
+    event_period: Optional[str] = None
+    event_place: Optional[str] = None
+    url: Optional[str] = None
+
     class Config:
         orm_mode = True
